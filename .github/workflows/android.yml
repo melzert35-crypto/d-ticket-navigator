@@ -38,6 +38,32 @@ jobs:
         run: |
           git checkout -- test/widget_test.dart
 
+      - name: Download GTFS feed
+        run: |
+          mkdir -p assets/data
+          mkdir -p /tmp/gtfs
+
+          echo "Downloading current Germany public transport GTFS feed..."
+
+          curl -L --fail \
+            --retry 3 \
+            --retry-delay 5 \
+            -o /tmp/gtfs/latest.zip \
+            https://download.gtfs.de/germany/nv_free/latest.zip
+
+          echo "Extracting stops.txt..."
+
+          unzip -j -o \
+            /tmp/gtfs/latest.zip \
+            'stops.txt' \
+            -d assets/data
+
+          test -s assets/data/stops.txt
+
+          echo "GTFS stops.txt successfully created."
+
+          wc -l assets/data/stops.txt
+
       - name: Set compile SDK
         run: |
           sed -i 's/flutter.compileSdkVersion/36/g' android/app/build.gradle.kts
