@@ -27,11 +27,14 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Create Android platform
+          - name: Create Android platform
         run: |
           flutter create \
             --platforms=android \
             --project-name d_ticket_navigator \
+            .
+
+          rm -f test/widget_test.dart
             .
 
       - name: Set compile SDK
