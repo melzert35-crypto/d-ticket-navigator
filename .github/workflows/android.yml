@@ -58,3 +58,4 @@ jobs:
         with:
           name: d-ticket-navigator-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          
