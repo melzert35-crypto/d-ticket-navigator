@@ -38,18 +38,36 @@ jobs:
         run: |
           git checkout -- test/widget_test.dart
 
-      - name: Download GTFS feed
+      - name: Prepare GTFS data
         run: |
+          set -e
+
+          echo "========================================"
+          echo "Preparing GTFS data"
+          echo "========================================"
+
           mkdir -p assets/data
           mkdir -p /tmp/gtfs
 
-          echo "Downloading current Germany public transport GTFS feed..."
+          echo "Downloading current Germany GTFS feed..."
 
           curl -L --fail \
             --retry 3 \
             --retry-delay 5 \
+            --connect-timeout 30 \
+            --max-time 300 \
             -o /tmp/gtfs/latest.zip \
             https://download.gtfs.de/germany/nv_free/latest.zip
+
+          echo "Download finished."
+
+          echo "Checking ZIP file..."
+
+          test -s /tmp/gtfs/latest.zip
+
+          unzip -t /tmp/gtfs/latest.zip > /dev/null
+
+          echo "ZIP file is valid."
 
           echo "Extracting stops.txt..."
 
@@ -58,28 +76,75 @@ jobs:
             'stops.txt' \
             -d assets/data
 
+          echo "Checking generated asset..."
+
           test -s assets/data/stops.txt
 
-          echo "GTFS stops.txt successfully created."
+          echo "GTFS asset successfully created."
 
+          echo "File size:"
+          ls -lh assets/data/stops.txt
+
+          echo "Number of lines:"
           wc -l assets/data/stops.txt
+
+          echo "First lines:"
+          head -n 5 assets/data/stops.txt
+
+      - name: Verify Flutter asset configuration
+        run: |
+          set -e
+
+          echo "Checking pubspec.yaml..."
+
+          grep -n "assets/data/stops.txt" pubspec.yaml
+
+          echo "Checking asset file..."
+
+          test -s assets/data/stops.txt
+
+          echo "Asset configuration OK."
 
       - name: Set compile SDK
         run: |
-          sed -i 's/flutter.compileSdkVersion/36/g' android/app/build.gradle.kts
-          sed -i 's/flutter.targetSdkVersion/36/g' android/app/build.gradle.kts
+          set -e
+
+          sed -i \
+            's/flutter.compileSdkVersion/36/g' \
+            android/app/build.gradle.kts
+
+          sed -i \
+            's/flutter.targetSdkVersion/36/g' \
+            android/app/build.gradle.kts
+
+          echo "compileSdk configuration:"
+          grep -n "compileSdk" android/app/build.gradle.kts
 
       - name: Get dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
 
       - name: Analyze
-        run: flutter analyze
+        run: |
+          flutter analyze
 
       - name: Test
-        run: flutter test
+        run: |
+          flutter test
 
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
+
+      - name: Check APK
+        run: |
+          set -e
+
+          test -s build/app/outputs/flutter-apk/app-release.apk
+
+          echo "APK successfully created."
+
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
