@@ -34,7 +34,9 @@ jobs:
             --project-name d_ticket_navigator \
             .
 
-          rm -f test/widget_test.dart
+      - name: Restore test file
+        run: |
+          git checkout -- test/widget_test.dart
 
       - name: Set compile SDK
         run: |
@@ -58,4 +60,3 @@ jobs:
         with:
           name: d-ticket-navigator-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          
