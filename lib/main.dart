@@ -1,5 +1,3 @@
-Ja, das liegt an der Darstellung meines Schreibblocks auf deinem Handy. Wir brauchen dafür keinen Schreibblock. Ich gebe dir den Inhalt als normalen kopierbaren Codeblock.
-Bitte in GitHub lib/main.dart komplett löschen und durch diesen Inhalt ersetzen:
 import 'package:flutter/material.dart';
 
 void main() {
@@ -403,72 +401,3 @@ class SearchResultPage extends StatelessWidget {
   }
 
   String _formatTime(TimeOfDay time) {
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-
-    return '$hour:$minute';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Verbindung'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$from → $to',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_formatDate(date)} '
-                    'um ${_formatTime(time)}',
-                  ),
-                  const SizedBox(height: 20),
-                  const Divider(),
-                  const SizedBox(height: 20),
-                  const Icon(
-                    Icons.route,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Noch keine Verbindung berechnet.',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Hier wird später der '
-                    'GTFS/DELFI-Routenplaner '
-                    'angeschlossen.',
-                    style: TextStyle(
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-Wichtig: Diesmal wirklich nur lib/main.dart ersetzen. pubspec.yaml und android.yml lassen wir unverändert.
-Danach Commit changes und den Build starten lassen. Wenn GitHub einen Fehler meldet, schick mir wieder den roten Abschnitt – dann gehen wir den nächsten Schritt an.
