@@ -1,0 +1,58 @@
+name: Android Build
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.35.1"
+          channel: stable
+          cache: true
+
+      - name: Create Android platform
+        run: |
+          flutter create \
+            --platforms=android \
+            --project-name d_ticket_navigator \
+            .
+
+      - name: Set compile SDK
+        run: |
+          sed -i 's/flutter.compileSdkVersion/36/g' android/app/build.gradle.kts
+          sed -i 's/flutter.targetSdkVersion/36/g' android/app/build.gradle.kts
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: d-ticket-navigator-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
