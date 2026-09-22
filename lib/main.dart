@@ -29,6 +29,7 @@ class DTicketNavigatorApp extends StatelessWidget {
 class Station {
   final String id;
   final String name;
+  final String location;
   final double? latitude;
   final double? longitude;
   final String? parentStation;
@@ -39,6 +40,7 @@ class Station {
   const Station({
     required this.id,
     required this.name,
+    this.location = '',
     this.latitude,
     this.longitude,
     this.parentStation,
@@ -47,20 +49,35 @@ class Station {
     this.searchText = '',
   });
 
-  factory Station.fromJson(Map<String, dynamic> json) {
+  factory Station.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return Station(
       id: (json['id'] ?? '').toString(),
       name: (json['name'] ?? '').toString(),
-      latitude: _toDouble(json['lat']),
-      longitude: _toDouble(json['lon']),
-      parentStation: _toNullableString(json['parent']),
-      locationType: _toInt(json['type']),
-      priority: _toInt(json['priority']),
-      searchText: (json['search'] ?? '').toString(),
+      location:
+          (json['location'] ?? '').toString(),
+      latitude:
+          _toDouble(json['lat']),
+      longitude:
+          _toDouble(json['lon']),
+      parentStation:
+          _toNullableString(
+        json['parent'],
+      ),
+      locationType:
+          _toInt(json['type']),
+      priority:
+          _toInt(json['priority']),
+      searchText:
+          (json['search'] ?? '')
+              .toString(),
     );
   }
 
-  static double? _toDouble(dynamic value) {
+  static double? _toDouble(
+    dynamic value,
+  ) {
     if (value is num) {
       return value.toDouble();
     }
@@ -70,7 +87,9 @@ class Station {
     );
   }
 
-  static int _toInt(dynamic value) {
+  static int _toInt(
+    dynamic value,
+  ) {
     if (value is num) {
       return value.toInt();
     }
@@ -81,10 +100,14 @@ class Station {
         0;
   }
 
-  static String? _toNullableString(dynamic value) {
-    final text = value?.toString().trim();
+  static String? _toNullableString(
+    dynamic value,
+  ) {
+    final text =
+        value?.toString().trim();
 
-    if (text == null || text.isEmpty) {
+    if (text == null ||
+        text.isEmpty) {
       return null;
     }
 
@@ -103,7 +126,8 @@ class _ScoredStation {
 }
 
 class StationDatabase {
-  final Map<String, List<Station>> _cache = {};
+  final Map<String, List<Station>>
+      _cache = {};
 
   bool _loading = false;
 
@@ -115,13 +139,6 @@ class StationDatabase {
     _loading = true;
 
     try {
-      /*
-       * Wir laden absichtlich NICHT den kompletten
-       * Deutschland-Datensatz.
-       *
-       * Die eigentliche Suche lädt später nur die
-       * benötigten Buchstaben-Dateien.
-       */
       await _loadBucket('a');
     } finally {
       _loading = false;
@@ -131,33 +148,40 @@ class StationDatabase {
   Future<List<Station>> _loadBucket(
     String bucket,
   ) async {
-    final key = bucket.toLowerCase();
+    final key =
+        bucket.toLowerCase();
 
     if (_cache.containsKey(key)) {
       return _cache[key]!;
     }
 
     try {
-      final jsonText = await rootBundle.loadString(
+      final jsonText =
+          await rootBundle.loadString(
         'assets/data/stations/$key.json',
       );
 
-      final decoded = jsonDecode(jsonText);
+      final decoded =
+          jsonDecode(jsonText);
 
       if (decoded is! List) {
         _cache[key] = [];
         return [];
       }
 
-      final stations = <Station>[];
+      final stations =
+          <Station>[];
 
       for (final item in decoded) {
         if (item is! Map) {
           continue;
         }
 
-        final station = Station.fromJson(
-          Map<String, dynamic>.from(item),
+        final station =
+            Station.fromJson(
+          Map<String, dynamic>.from(
+            item,
+          ),
         );
 
         if (station.id.isEmpty ||
@@ -172,10 +196,6 @@ class StationDatabase {
 
       return stations;
     } catch (_) {
-      /*
-       * Ein einzelner nicht vorhandener Bucket darf
-       * die komplette Suche nicht zerstören.
-       */
       _cache[key] = [];
       return [];
     }
@@ -185,37 +205,34 @@ class StationDatabase {
     String query, {
     int limit = 8,
   }) async {
-    final normalizedQuery = _normalize(query);
+    final normalizedQuery =
+        _normalize(query);
 
     if (normalizedQuery.isEmpty) {
       return [];
     }
 
-    final queryTokens = _tokens(normalizedQuery);
+    final queryTokens =
+        _tokens(normalizedQuery);
 
     if (queryTokens.isEmpty) {
       return [];
     }
 
-    /*
-     * Die Indexdateien sind nach dem ersten Buchstaben
-     * eines relevanten Suchwortes aufgebaut.
-     *
-     * Bei "Wuppertal" wird also nur w.json geladen.
-     *
-     * Bei "Reichenbach Vogtland" werden r.json und
-     * v.json geladen und anschließend zusammengeführt.
-     */
     final buckets = <String>{};
 
-    for (final token in queryTokens) {
+    for (final token
+        in queryTokens) {
       if (token.isEmpty) {
         continue;
       }
 
-      final first = token[0];
+      final first =
+          token[0];
 
-      if (RegExp(r'^[a-z]$').hasMatch(first)) {
+      if (RegExp(
+        r'^[a-z]$',
+      ).hasMatch(first)) {
         buckets.add(first);
       }
     }
@@ -224,20 +241,30 @@ class StationDatabase {
       return [];
     }
 
-    final stationMap = <String, Station>{};
+    final stationMap =
+        <String, Station>{};
 
-    for (final bucket in buckets) {
-      final stations = await _loadBucket(bucket);
+    for (final bucket
+        in buckets) {
+      final stations =
+          await _loadBucket(
+        bucket,
+      );
 
-      for (final station in stations) {
-        stationMap[station.id] = station;
+      for (final station
+          in stations) {
+        stationMap[
+            station.id] = station;
       }
     }
 
-    final scored = <_ScoredStation>[];
+    final scored =
+        <_ScoredStation>[];
 
-    for (final station in stationMap.values) {
-      final score = _scoreStation(
+    for (final station
+        in stationMap.values) {
+      final score =
+          _scoreStation(
         station,
         normalizedQuery,
         queryTokens,
@@ -256,7 +283,9 @@ class StationDatabase {
     scored.sort(
       (a, b) {
         final scoreCompare =
-            b.score.compareTo(a.score);
+            b.score.compareTo(
+          a.score,
+        );
 
         if (scoreCompare != 0) {
           return scoreCompare;
@@ -275,7 +304,8 @@ class StationDatabase {
         return a.station.name
             .toLowerCase()
             .compareTo(
-              b.station.name.toLowerCase(),
+              b.station.name
+                  .toLowerCase(),
             );
       },
     );
@@ -283,7 +313,8 @@ class StationDatabase {
     return scored
         .take(limit)
         .map(
-          (item) => item.station,
+          (item) =>
+              item.station,
         )
         .toList();
   }
@@ -293,22 +324,34 @@ class StationDatabase {
     String query,
     List<String> queryTokens,
   ) {
-    final name = _normalize(station.name);
+    final name =
+        _normalize(
+      station.name,
+    );
 
-    if (name.isEmpty) {
+    final location =
+        _normalize(
+      station.location,
+    );
+
+    if (name.isEmpty &&
+        location.isEmpty) {
       return 0;
     }
 
-    final nameTokens = _tokens(name);
+    final nameTokens =
+        _tokens(name);
+
+    final locationTokens =
+        _tokens(location);
+
+    final allTokens = [
+      ...nameTokens,
+      ...locationTokens,
+    ];
 
     var score = 0.0;
 
-    /*
-     * Sehr starke Treffer:
-     *
-     * "wuppertal" == kompletter Stationsname
-     * "wuppertal hbf" beginnt mit der Suche
-     */
     if (name == query) {
       score += 5000;
     }
@@ -321,35 +364,63 @@ class StationDatabase {
       score += 1200;
     }
 
+    if (location == query) {
+      score += 3000;
+    }
+
+    if (location.startsWith(query)) {
+      score += 1600;
+    }
+
+    if (location.contains(query)) {
+      score += 800;
+    }
+
     var matchedTokens = 0;
 
-    for (final queryToken in queryTokens) {
+    for (final queryToken
+        in queryTokens) {
       if (queryToken.length < 2) {
         continue;
       }
 
-      var bestTokenScore = 0.0;
+      var bestTokenScore =
+          0.0;
 
-      for (final nameToken in nameTokens) {
-        if (nameToken == queryToken) {
+      for (final nameToken
+          in allTokens) {
+        if (nameToken ==
+            queryToken) {
           bestTokenScore =
-              _max(bestTokenScore, 1000);
-        } else if (nameToken.startsWith(
+              _max(
+            bestTokenScore,
+            1000,
+          );
+        } else if (nameToken
+            .startsWith(
           queryToken,
         )) {
           bestTokenScore =
-              _max(bestTokenScore, 600);
-        } else if (nameToken.contains(
+              _max(
+            bestTokenScore,
+            600,
+          );
+        } else if (nameToken
+            .contains(
           queryToken,
         )) {
           bestTokenScore =
-              _max(bestTokenScore, 300);
+              _max(
+            bestTokenScore,
+            300,
+          );
         }
       }
 
       if (bestTokenScore > 0) {
         matchedTokens++;
-        score += bestTokenScore;
+        score +=
+            bestTokenScore;
       }
     }
 
@@ -357,76 +428,76 @@ class StationDatabase {
       return 0;
     }
 
-    if (matchedTokens == queryTokens.length) {
+    if (matchedTokens ==
+        queryTokens.length) {
       score += 1500;
     } else {
-      score += matchedTokens * 100;
+      score +=
+          matchedTokens * 100;
     }
 
-    /*
-     * Ein wichtiger Punkt für die aktuelle Suche:
-     *
-     * Bei "Wuppertal" soll
-     *
-     *   Wuppertal
-     *   Wuppertal Hbf
-     *   Wuppertal Barmen
-     *
-     * vor langen Namen wie
-     *
-     *   Wuppertal Hatzfeld Barmen
-     *
-     * erscheinen.
-     *
-     * Deshalb werden zusätzliche Wörter leicht abgewertet.
-     */
     final extraTokens =
-        nameTokens.length - queryTokens.length;
+        allTokens.length -
+            queryTokens.length;
 
     if (extraTokens > 0) {
-      score -= extraTokens * 90;
+      score -=
+          extraTokens * 90;
     }
 
-    /*
-     * Kürzere Namen werden bei ansonsten gleichem
-     * Treffer bevorzugt.
-     */
-    score -= name.length * 0.5;
+    score -=
+        name.length * 0.5;
 
-    /*
-     * Der vom Python-Indexer berechnete Prioritätswert
-     * berücksichtigt u. a. echte Bahnhöfe.
-     */
-    score += station.priority * 0.5;
+    score +=
+        station.priority * 0.5;
 
-    /*
-     * Station (location_type 1) leicht bevorzugen.
-     */
-    if (station.locationType == 1) {
+    if (station.locationType ==
+        1) {
       score += 200;
     }
 
     return score;
   }
 
-  List<String> _tokens(String value) {
+  List<String> _tokens(
+    String value,
+  ) {
     return value
-        .split(RegExp(r'[^a-z0-9]+'))
+        .split(
+          RegExp(
+            r'[^a-z0-9]+',
+          ),
+        )
         .where(
-          (token) => token.isNotEmpty,
+          (token) =>
+              token.isNotEmpty,
         )
         .toList();
   }
 
-  String _normalize(String value) {
+  String _normalize(
+    String value,
+  ) {
     var result =
         value.trim().toLowerCase();
 
     result = result
-        .replaceAll('ä', 'ae')
-        .replaceAll('ö', 'oe')
-        .replaceAll('ü', 'ue')
-        .replaceAll('ß', 'ss');
+        .replaceAll(
+          'ä',
+          'ae',
+        )
+        .replaceAll(
+          'ö',
+          'oe',
+        )
+        .replaceAll(
+          'ü',
+          'ue',
+        )
+        .replaceAll(
+          'ß',
+          'ss',
+        );
 
     result = result.replaceAll(
       RegExp(r'\bbhf\b'),
@@ -444,7 +515,9 @@ class StationDatabase {
     );
 
     result = result.replaceAll(
-      RegExp(r'[\(\),./_-]+'),
+      RegExp(
+        r'[\(\),./_-]+',
+      ),
       ' ',
     );
 
@@ -464,8 +537,11 @@ class StationDatabase {
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class HomePage
+    extends StatefulWidget {
+  const HomePage({
+    super.key,
+  });
 
   @override
   State<HomePage> createState() =>
@@ -494,13 +570,21 @@ class _HomePageState
 
   int _currentTab = 0;
 
-  Station? _selectedFromStation;
-  Station? _selectedToStation;
+  Station?
+      _selectedFromStation;
 
-  List<Station> _fromSuggestions = [];
-  List<Station> _toSuggestions = [];
+  Station?
+      _selectedToStation;
 
-  bool _loadingStations = true;
+  List<Station>
+      _fromSuggestions = [];
+
+  List<Station>
+      _toSuggestions = [];
+
+  bool _loadingStations =
+      true;
+
   String? _stationError;
 
   int _fromSearchNumber = 0;
@@ -519,16 +603,19 @@ class _HomePageState
     super.dispose();
   }
 
-  Future<void> _loadStations() async {
+  Future<void>
+      _loadStations() async {
     try {
-      await _stationDatabase.load();
+      await _stationDatabase
+          .load();
 
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _loadingStations = false;
+        _loadingStations =
+            false;
       });
     } catch (error) {
       if (!mounted) {
@@ -536,31 +623,38 @@ class _HomePageState
       }
 
       setState(() {
-        _loadingStations = false;
+        _loadingStations =
+            false;
+
         _stationError =
             error.toString();
       });
     }
   }
 
-  Future<void> _onFromChanged(
+  Future<void>
+      _onFromChanged(
     String value,
   ) async {
     final searchNumber =
         ++_fromSearchNumber;
 
     setState(() {
-      _selectedFromStation = null;
+      _selectedFromStation =
+          null;
+
       _fromSuggestions = [];
     });
 
-    if (value.trim().length < 2) {
+    if (value.trim().length <
+        2) {
       return;
     }
 
     try {
       final suggestions =
-          await _stationDatabase.search(
+          await _stationDatabase
+              .search(
         value,
         limit: 8,
       );
@@ -583,31 +677,38 @@ class _HomePageState
       }
 
       setState(() {
-        _fromSuggestions = [];
+        _fromSuggestions =
+            [];
+
         _stationError =
             error.toString();
       });
     }
   }
 
-  Future<void> _onToChanged(
+  Future<void>
+      _onToChanged(
     String value,
   ) async {
     final searchNumber =
         ++_toSearchNumber;
 
     setState(() {
-      _selectedToStation = null;
+      _selectedToStation =
+          null;
+
       _toSuggestions = [];
     });
 
-    if (value.trim().length < 2) {
+    if (value.trim().length <
+        2) {
       return;
     }
 
     try {
       final suggestions =
-          await _stationDatabase.search(
+          await _stationDatabase
+              .search(
         value,
         limit: 8,
       );
@@ -630,7 +731,9 @@ class _HomePageState
       }
 
       setState(() {
-        _toSuggestions = [];
+        _toSuggestions =
+            [];
+
         _stationError =
             error.toString();
       });
@@ -655,7 +758,8 @@ class _HomePageState
             station.name.length,
       );
 
-      _fromSuggestions = [];
+      _fromSuggestions =
+          [];
     });
   }
 
@@ -681,12 +785,15 @@ class _HomePageState
     });
   }
 
-  Future<void> _selectDate() async {
+  Future<void>
+      _selectDate() async {
     final picked =
         await showDatePicker(
       context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime.now(),
+      initialDate:
+          _selectedDate,
+      firstDate:
+          DateTime.now(),
       lastDate:
           DateTime.now().add(
         const Duration(
@@ -697,12 +804,14 @@ class _HomePageState
 
     if (picked != null) {
       setState(() {
-        _selectedDate = picked;
+        _selectedDate =
+            picked;
       });
     }
   }
 
-  Future<void> _selectTime() async {
+  Future<void>
+      _selectTime() async {
     final picked =
         await showTimePicker(
       context: context,
@@ -712,7 +821,8 @@ class _HomePageState
 
     if (picked != null) {
       setState(() {
-        _selectedTime = picked;
+        _selectedTime =
+            picked;
       });
     }
   }
@@ -731,8 +841,11 @@ class _HomePageState
         _selectedToStation;
 
     setState(() {
-      _fromController.text = to;
-      _toController.text = from;
+      _fromController.text =
+          to;
+
+      _toController.text =
+          from;
 
       _selectedFromStation =
           toStation;
@@ -747,15 +860,18 @@ class _HomePageState
 
   void _searchConnection() {
     final from =
-        _fromController.text.trim();
+        _fromController.text
+            .trim();
 
     final to =
-        _toController.text.trim();
+        _toController.text
+            .trim();
 
     if (from.isEmpty ||
         to.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(
         const SnackBar(
           content: Text(
             'Bitte Start und Ziel eingeben.',
@@ -777,8 +893,10 @@ class _HomePageState
               _selectedFromStation,
           toStation:
               _selectedToStation,
-          date: _selectedDate,
-          time: _selectedTime,
+          date:
+              _selectedDate,
+          time:
+              _selectedTime,
         ),
       ),
     );
@@ -789,11 +907,17 @@ class _HomePageState
   ) {
     final day = date.day
         .toString()
-        .padLeft(2, '0');
+        .padLeft(
+          2,
+          '0',
+        );
 
     final month = date.month
         .toString()
-        .padLeft(2, '0');
+        .padLeft(
+          2,
+          '0',
+        );
 
     return '$day.$month.${date.year}';
   }
@@ -803,11 +927,18 @@ class _HomePageState
   ) {
     final hour = time.hour
         .toString()
-        .padLeft(2, '0');
+        .padLeft(
+          2,
+          '0',
+        );
 
-    final minute = time.minute
-        .toString()
-        .padLeft(2, '0');
+    final minute =
+        time.minute
+            .toString()
+            .padLeft(
+              2,
+              '0',
+            );
 
     return '$hour:$minute';
   }
@@ -826,8 +957,10 @@ class _HomePageState
           ),
         ),
       ),
-      body: IndexedStack(
-        index: _currentTab,
+      body:
+          IndexedStack(
+        index:
+            _currentTab,
         children: [
           _buildSearchPage(),
           _buildMapPage(),
@@ -841,15 +974,16 @@ class _HomePageState
         onDestinationSelected:
             (index) {
           setState(() {
-            _currentTab = index;
+            _currentTab =
+                index;
           });
         },
         destinations: const [
           NavigationDestination(
-            icon: Icon(
-              Icons.route,
-            ),
-            label: 'Verbindung',
+            icon:
+                Icon(Icons.route),
+            label:
+                'Verbindung',
           ),
           NavigationDestination(
             icon: Icon(
@@ -859,9 +993,11 @@ class _HomePageState
           ),
           NavigationDestination(
             icon: Icon(
-              Icons.warning_amber_outlined,
+              Icons
+                  .warning_amber_outlined,
             ),
-            label: 'Störungen',
+            label:
+                'Störungen',
           ),
         ],
       ),
@@ -870,18 +1006,26 @@ class _HomePageState
 
   Widget _buildSearchPage() {
     return SafeArea(
-      child: SingleChildScrollView(
+      child:
+          SingleChildScrollView(
         padding:
-            const EdgeInsets.all(16),
-        child: Column(
+            const EdgeInsets.all(
+          16,
+        ),
+        child:
+            Column(
           crossAxisAlignment:
-              CrossAxisAlignment.stretch,
+              CrossAxisAlignment
+                  .stretch,
           children: [
             if (_loadingStations)
               const Card(
-                child: Padding(
+                child:
+                    Padding(
                   padding:
-                      EdgeInsets.all(16),
+                      EdgeInsets.all(
+                    16,
+                  ),
                   child: Row(
                     children: [
                       SizedBox(
@@ -889,7 +1033,8 @@ class _HomePageState
                         height: 22,
                         child:
                             CircularProgressIndicator(
-                          strokeWidth: 2,
+                          strokeWidth:
+                              2,
                         ),
                       ),
                       SizedBox(
@@ -904,35 +1049,47 @@ class _HomePageState
                   ),
                 ),
               ),
-            if (_stationError != null)
+            if (_stationError !=
+                null)
               Card(
-                child: Padding(
+                child:
+                    Padding(
                   padding:
-                      const EdgeInsets.all(16),
+                      const EdgeInsets.all(
+                    16,
+                  ),
                   child: Text(
                     'GTFS-Fehler:\n'
                     '$_stationError',
                     style:
                         const TextStyle(
-                      color: Colors.red,
+                      color:
+                          Colors.red,
                     ),
                   ),
                 ),
               ),
             Card(
-              child: Padding(
+              child:
+                  Padding(
                 padding:
-                    const EdgeInsets.all(16),
-                child: Column(
+                    const EdgeInsets.all(
+                  16,
+                ),
+                child:
+                    Column(
                   crossAxisAlignment:
-                      CrossAxisAlignment.stretch,
+                      CrossAxisAlignment
+                          .stretch,
                   children: [
                     const Text(
                       'Reise planen',
-                      style: TextStyle(
+                      style:
+                          TextStyle(
                         fontSize: 22,
                         fontWeight:
-                            FontWeight.bold,
+                            FontWeight
+                                .bold,
                       ),
                     ),
                     const SizedBox(
@@ -941,560 +1098,5 @@ class _HomePageState
                     Text(
                       'Verbindungen mit dem '
                       'Deutschlandticket finden',
-                      style: TextStyle(
-                        color:
-                            Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(
-                      height: 20,
-                    ),
-                    _buildStationField(
-                      controller:
-                          _fromController,
-                      label: 'Start',
-                      hint:
-                          'z. B. Wuppertal',
-                      icon:
-                          Icons.trip_origin,
-                      suggestions:
-                          _fromSuggestions,
-                      onChanged:
-                          _onFromChanged,
-                      onSelected:
-                          _selectFromStation,
-                    ),
-                    const SizedBox(
-                      height: 10,
-                    ),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Divider(),
-                        ),
-                        IconButton(
-                          tooltip:
-                              'Start und Ziel tauschen',
-                          onPressed:
-                              _swapLocations,
-                          icon: const Icon(
-                            Icons.swap_vert,
-                          ),
-                        ),
-                        const Expanded(
-                          child: Divider(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(
-                      height: 10,
-                    ),
-                    _buildStationField(
-                      controller:
-                          _toController,
-                      label: 'Ziel',
-                      hint:
-                          'z. B. Reichenbach Vogtland',
-                      icon:
-                          Icons.location_on_outlined,
-                      suggestions:
-                          _toSuggestions,
-                      onChanged:
-                          _onToChanged,
-                      onSelected:
-                          _selectToStation,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(
-              height: 16,
-            ),
-            Card(
-              child: Padding(
-                padding:
-                    const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    ListTile(
-                      contentPadding:
-                          EdgeInsets.zero,
-                      leading:
-                          const Icon(
-                        Icons.calendar_today,
-                      ),
-                      title:
-                          const Text('Datum'),
-                      subtitle:
-                          Text(
-                        _formatDate(
-                          _selectedDate,
-                        ),
-                      ),
-                      trailing:
-                          const Icon(
-                        Icons.chevron_right,
-                      ),
-                      onTap:
-                          _selectDate,
-                    ),
-                    const Divider(),
-                    ListTile(
-                      contentPadding:
-                          EdgeInsets.zero,
-                      leading:
-                          const Icon(
-                        Icons.access_time,
-                      ),
-                      title:
-                          const Text('Abfahrt'),
-                      subtitle:
-                          Text(
-                        _formatTime(
-                          _selectedTime,
-                        ),
-                      ),
-                      trailing:
-                          const Icon(
-                        Icons.chevron_right,
-                      ),
-                      onTap:
-                          _selectTime,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(
-              height: 20,
-            ),
-            SizedBox(
-              height: 54,
-              child:
-                  FilledButton.icon(
-                onPressed:
-                    _searchConnection,
-                icon:
-                    const Icon(
-                  Icons.search,
-                ),
-                label:
-                    const Text(
-                  'VERBINDUNG SUCHEN',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight:
-                        FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(
-              height: 12,
-            ),
-            OutlinedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Standortfunktion folgt.',
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(
-                Icons.my_location,
-              ),
-              label: const Text(
-                'Aktuellen Standort verwenden',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStationField({
-    required TextEditingController
-        controller,
-    required String label,
-    required String hint,
-    required IconData icon,
-    required List<Station>
-        suggestions,
-    required Future<void> Function(
-      String,
-    ) onChanged,
-    required ValueChanged<Station>
-        onSelected,
-  }) {
-    return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller:
-              controller,
-          onChanged:
-              (value) {
-            onChanged(value);
-            setState(() {});
-          },
-          decoration:
-              InputDecoration(
-            labelText: label,
-            hintText: hint,
-            prefixIcon:
-                Icon(icon),
-            suffixIcon:
-                controller.text.isNotEmpty
-                    ? IconButton(
-                        tooltip:
-                            'Löschen',
-                        onPressed: () {
-                          controller.clear();
-
-                          onChanged('');
-
-                          setState(() {});
-                        },
-                        icon:
-                            const Icon(
-                          Icons.clear,
-                        ),
-                      )
-                    : null,
-            border:
-                OutlineInputBorder(
-              borderRadius:
-                  BorderRadius.circular(
-                12,
-              ),
-            ),
-          ),
-        ),
-        if (suggestions.isNotEmpty)
-          Container(
-            margin:
-                const EdgeInsets.only(
-              top: 4,
-            ),
-            constraints:
-                const BoxConstraints(
-              maxHeight: 320,
-            ),
-            decoration:
-                BoxDecoration(
-              color:
-                  Theme.of(context)
-                      .colorScheme
-                      .surface,
-              border:
-                  Border.all(
-                color:
-                    Colors.grey.shade300,
-              ),
-              borderRadius:
-                  BorderRadius.circular(
-                12,
-              ),
-            ),
-            child:
-                ListView.separated(
-              shrinkWrap: true,
-              itemCount:
-                  suggestions.length,
-              separatorBuilder:
-                  (context, index) =>
-                      const Divider(
-                height: 1,
-              ),
-              itemBuilder:
-                  (context, index) {
-                final station =
-                    suggestions[index];
-
-                return ListTile(
-                  dense: true,
-                  leading: Icon(
-                    station.locationType == 1
-                        ? Icons.train
-                        : Icons
-                            .directions_bus_outlined,
-                  ),
-                  title: Text(
-                    station.name,
-                    maxLines: 2,
-                    overflow:
-                        TextOverflow.ellipsis,
-                  ),
-                  subtitle:
-                      station.locationType == 1
-                          ? const Text(
-                              'Bahnhof / Station',
-                            )
-                          : null,
-                  onTap: () {
-                    onSelected(
-                      station,
-                    );
-
-                    setState(() {});
-                  },
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildMapPage() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment:
-            MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.map_outlined,
-            size: 72,
-          ),
-          SizedBox(
-            height: 16,
-          ),
-          Text(
-            'Karte',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight:
-                  FontWeight.bold,
-            ),
-          ),
-          SizedBox(
-            height: 8,
-          ),
-          Text(
-            'Kartenansicht folgt.',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDisruptionPage() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment:
-            MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.warning_amber_outlined,
-            size: 72,
-          ),
-          SizedBox(
-            height: 16,
-          ),
-          Text(
-            'Störungen',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight:
-                  FontWeight.bold,
-            ),
-          ),
-          SizedBox(
-            height: 8,
-          ),
-          Text(
-            'Störungsinformationen folgen.',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class SearchResultPage
-    extends StatelessWidget {
-  final String from;
-  final String to;
-  final Station? fromStation;
-  final Station? toStation;
-  final DateTime date;
-  final TimeOfDay time;
-
-  const SearchResultPage({
-    super.key,
-    required this.from,
-    required this.to,
-    required this.fromStation,
-    required this.toStation,
-    required this.date,
-    required this.time,
-  });
-
-  String _formatDate(
-    DateTime date,
-  ) {
-    final day = date.day
-        .toString()
-        .padLeft(2, '0');
-
-    final month = date.month
-        .toString()
-        .padLeft(2, '0');
-
-    return '$day.$month.${date.year}';
-  }
-
-  String _formatTime(
-    TimeOfDay time,
-  ) {
-    final hour = time.hour
-        .toString()
-        .padLeft(2, '0');
-
-    final minute = time.minute
-        .toString()
-        .padLeft(2, '0');
-
-    return '$hour:$minute';
-  }
-
-  @override
-  Widget build(
-    BuildContext context,
-  ) {
-    return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('Verbindung'),
-      ),
-      body: ListView(
-        padding:
-            const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding:
-                  const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$from → $to',
-                    style:
-                        const TextStyle(
-                      fontSize: 20,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(
-                    height: 8,
-                  ),
-                  Text(
-                    '${_formatDate(date)} '
-                    'um ${_formatTime(time)}',
-                  ),
-                  const SizedBox(
-                    height: 20,
-                  ),
-                  const Divider(),
-                  const SizedBox(
-                    height: 20,
-                  ),
-                  const Icon(
-                    Icons.route,
-                    size: 48,
-                  ),
-                  const SizedBox(
-                    height: 12,
-                  ),
-                  const Text(
-                    'Noch keine Verbindung berechnet.',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(
-                    height: 8,
-                  ),
-                  Text(
-                    'Die ausgewählten '
-                    'Haltestellen werden '
-                    'bereits mit ihrer '
-                    'GTFS-ID übernommen.',
-                    style: TextStyle(
-                      color:
-                          Colors.grey.shade700,
-                    ),
-                  ),
-                  if (fromStation != null) ...[
-                    const SizedBox(
-                      height: 16,
-                    ),
-                    Text(
-                      'Start-ID: '
-                      '${fromStation!.id}',
                       style:
-                          const TextStyle(
-                        fontSize: 12,
-                      ),
-                    ),
-                    if (fromStation!.latitude !=
-                            null &&
-                        fromStation!.longitude !=
-                            null)
-                      Text(
-                        'Koordinaten: '
-                        '${fromStation!.latitude}, '
-                        '${fromStation!.longitude}',
-                        style:
-                            const TextStyle(
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
-                  if (toStation != null) ...[
-                    const SizedBox(
-                      height: 8,
-                    ),
-                    Text(
-                      'Ziel-ID: '
-                      '${toStation!.id}',
-                      style:
-                          const TextStyle(
-                        fontSize: 12,
-                      ),
-                    ),
-                    if (toStation!.latitude !=
-                            null &&
-                        toStation!.longitude !=
-                            null)
-                      Text(
-                        'Koordinaten: '
-                        '${toStation!.latitude}, '
-                        '${toStation!.longitude}',
-                        style:
-                            const TextStyle(
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+      
