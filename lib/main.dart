@@ -33,6 +33,8 @@ class Station {
   final double? longitude;
   final String? parentStation;
   final int locationType;
+  final int priority;
+  final String searchText;
 
   const Station({
     required this.id,
@@ -41,216 +43,204 @@ class Station {
     this.longitude,
     this.parentStation,
     this.locationType = 0,
+    this.priority = 0,
+    this.searchText = '',
+  });
+
+  factory Station.fromJson(Map<String, dynamic> json) {
+    return Station(
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      latitude: _toDouble(json['lat']),
+      longitude: _toDouble(json['lon']),
+      parentStation: _toNullableString(json['parent']),
+      locationType: _toInt(json['type']),
+      priority: _toInt(json['priority']),
+      searchText: (json['search'] ?? '').toString(),
+    );
+  }
+
+  static double? _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(
+      value?.toString() ?? '',
+    );
+  }
+
+  static int _toInt(dynamic value) {
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(
+          value?.toString() ?? '',
+        ) ??
+        0;
+  }
+
+  static String? _toNullableString(dynamic value) {
+    final text = value?.toString().trim();
+
+    if (text == null || text.isEmpty) {
+      return null;
+    }
+
+    return text;
+  }
+}
+
+class _ScoredStation {
+  final Station station;
+  final double score;
+
+  const _ScoredStation({
+    required this.station,
+    required this.score,
   });
 }
 
 class StationDatabase {
-  List<Station> _stations = [];
+  final Map<String, List<Station>> _cache = {};
 
-  bool get isLoaded => _stations.isNotEmpty;
-
-  int get stationCount => _stations.length;
+  bool _loading = false;
 
   Future<void> load() async {
-    if (isLoaded) {
+    if (_loading) {
       return;
     }
 
-    final csv = await rootBundle.loadString(
-      'assets/data/stops.txt',
-    );
+    _loading = true;
 
-    _stations = _parseStops(csv);
+    try {
+      /*
+       * Wir laden absichtlich NICHT den kompletten
+       * Deutschland-Datensatz.
+       *
+       * Die eigentliche Suche lädt später nur die
+       * benötigten Buchstaben-Dateien.
+       */
+      await _loadBucket('a');
+    } finally {
+      _loading = false;
+    }
   }
 
-  List<Station> _parseStops(String csv) {
-    final lines = const LineSplitter().convert(csv);
+  Future<List<Station>> _loadBucket(
+    String bucket,
+  ) async {
+    final key = bucket.toLowerCase();
 
-    if (lines.isEmpty) {
+    if (_cache.containsKey(key)) {
+      return _cache[key]!;
+    }
+
+    try {
+      final jsonText = await rootBundle.loadString(
+        'assets/data/stations/$key.json',
+      );
+
+      final decoded = jsonDecode(jsonText);
+
+      if (decoded is! List) {
+        _cache[key] = [];
+        return [];
+      }
+
+      final stations = <Station>[];
+
+      for (final item in decoded) {
+        if (item is! Map) {
+          continue;
+        }
+
+        final station = Station.fromJson(
+          Map<String, dynamic>.from(item),
+        );
+
+        if (station.id.isEmpty ||
+            station.name.isEmpty) {
+          continue;
+        }
+
+        stations.add(station);
+      }
+
+      _cache[key] = stations;
+
+      return stations;
+    } catch (_) {
+      /*
+       * Ein einzelner nicht vorhandener Bucket darf
+       * die komplette Suche nicht zerstören.
+       */
+      _cache[key] = [];
       return [];
     }
-
-    final header = _parseCsvLine(lines.first);
-
-    final stopIdIndex = _columnIndex(
-      header,
-      'stop_id',
-    );
-
-    final stopNameIndex = _columnIndex(
-      header,
-      'stop_name',
-    );
-
-    final latIndex = _columnIndex(
-      header,
-      'stop_lat',
-    );
-
-    final lonIndex = _columnIndex(
-      header,
-      'stop_lon',
-    );
-
-    final parentIndex = _columnIndex(
-      header,
-      'parent_station',
-    );
-
-    final locationTypeIndex = _columnIndex(
-      header,
-      'location_type',
-    );
-
-    if (stopIdIndex < 0 || stopNameIndex < 0) {
-      throw Exception(
-        'GTFS stops.txt enthält keine gültigen '
-        'stop_id/stop_name-Spalten.',
-      );
-    }
-
-    final result = <Station>[];
-    final seen = <String>{};
-
-    for (var i = 1; i < lines.length; i++) {
-      final line = lines[i].trim();
-
-      if (line.isEmpty) {
-        continue;
-      }
-
-      final fields = _parseCsvLine(line);
-
-      if (fields.length <= stopIdIndex ||
-          fields.length <= stopNameIndex) {
-        continue;
-      }
-
-      final id = fields[stopIdIndex].trim();
-      final name = fields[stopNameIndex].trim();
-
-      if (id.isEmpty || name.isEmpty) {
-        continue;
-      }
-
-      var locationType = 0;
-
-      if (locationTypeIndex >= 0 &&
-          fields.length > locationTypeIndex) {
-        locationType =
-            int.tryParse(
-              fields[locationTypeIndex].trim(),
-            ) ??
-            0;
-      }
-
-      /*
-       * Für die erste Stationssuche berücksichtigen wir
-       * Haltestellen und Bahnhöfe.
-       *
-       * location_type:
-       * 0 = Stop/Platform
-       * 1 = Station
-       *
-       * Andere GTFS-Objekte werden zunächst ignoriert.
-       */
-      if (locationType != 0 &&
-          locationType != 1) {
-        continue;
-      }
-
-      if (!seen.add(id)) {
-        continue;
-      }
-
-      double? latitude;
-      double? longitude;
-
-      if (latIndex >= 0 &&
-          fields.length > latIndex) {
-        latitude = double.tryParse(
-          fields[latIndex].trim(),
-        );
-      }
-
-      if (lonIndex >= 0 &&
-          fields.length > lonIndex) {
-        longitude = double.tryParse(
-          fields[lonIndex].trim(),
-        );
-      }
-
-      String? parentStation;
-
-      if (parentIndex >= 0 &&
-          fields.length > parentIndex) {
-        final value =
-            fields[parentIndex].trim();
-
-        if (value.isNotEmpty) {
-          parentStation = value;
-        }
-      }
-
-      result.add(
-        Station(
-          id: id,
-          name: name,
-          latitude: latitude,
-          longitude: longitude,
-          parentStation: parentStation,
-          locationType: locationType,
-        ),
-      );
-    }
-
-    return result;
   }
 
-  int _columnIndex(
-    List<String> header,
-    String column,
-  ) {
-    return header.indexWhere(
-      (value) =>
-          value.trim().toLowerCase() ==
-          column.toLowerCase(),
-    );
-  }
-
-  List<Station> search(
+  Future<List<Station>> search(
     String query, {
-    int limit = 20,
-  }) {
-    final normalizedQuery =
-        _normalize(query);
+    int limit = 8,
+  }) async {
+    final normalizedQuery = _normalize(query);
 
     if (normalizedQuery.isEmpty) {
       return [];
     }
 
-    final queryTokens =
-        _tokens(normalizedQuery);
+    final queryTokens = _tokens(normalizedQuery);
+
+    if (queryTokens.isEmpty) {
+      return [];
+    }
+
+    /*
+     * Die Indexdateien sind nach dem ersten Buchstaben
+     * eines relevanten Suchwortes aufgebaut.
+     *
+     * Bei "Wuppertal" wird also nur w.json geladen.
+     *
+     * Bei "Reichenbach Vogtland" werden r.json und
+     * v.json geladen und anschließend zusammengeführt.
+     */
+    final buckets = <String>{};
+
+    for (final token in queryTokens) {
+      if (token.isEmpty) {
+        continue;
+      }
+
+      final first = token[0];
+
+      if (RegExp(r'^[a-z]$').hasMatch(first)) {
+        buckets.add(first);
+      }
+    }
+
+    if (buckets.isEmpty) {
+      return [];
+    }
+
+    final stationMap = <String, Station>{};
+
+    for (final bucket in buckets) {
+      final stations = await _loadBucket(bucket);
+
+      for (final station in stations) {
+        stationMap[station.id] = station;
+      }
+    }
 
     final scored = <_ScoredStation>[];
 
-    /*
-     * Wichtig:
-     * Wir laufen bewusst durch ALLE Stationen.
-     *
-     * Die alte Version hat nach den ersten 12
-     * Treffern aufgehört. Das war bei einem
-     * deutschlandweiten Datensatz problematisch.
-     */
-    for (final station in _stations) {
-      final normalizedName =
-          _normalize(station.name);
-
+    for (final station in stationMap.values) {
       final score = _scoreStation(
-        normalizedName,
-        queryTokens,
-        normalizedQuery,
         station,
+        normalizedQuery,
+        queryTokens,
       );
 
       if (score > 0) {
@@ -272,6 +262,16 @@ class StationDatabase {
           return scoreCompare;
         }
 
+        final nameLengthCompare =
+            a.station.name.length
+                .compareTo(
+          b.station.name.length,
+        );
+
+        if (nameLengthCompare != 0) {
+          return nameLengthCompare;
+        }
+
         return a.station.name
             .toLowerCase()
             .compareTo(
@@ -289,38 +289,36 @@ class StationDatabase {
   }
 
   double _scoreStation(
-    String name,
-    List<String> queryTokens,
-    String query,
     Station station,
+    String query,
+    List<String> queryTokens,
   ) {
-    var score = 0.0;
+    final name = _normalize(station.name);
 
-    /*
-     * Exakter kompletter Name.
-     */
-    if (name == query) {
-      score += 1000;
-    }
-
-    /*
-     * Der Name beginnt exakt mit der Suche.
-     */
-    if (name.startsWith(query)) {
-      score += 700;
-    }
-
-    /*
-     * Die Suchphrase kommt komplett im Namen vor.
-     */
-    if (name.contains(query)) {
-      score += 500;
+    if (name.isEmpty) {
+      return 0;
     }
 
     final nameTokens = _tokens(name);
 
-    if (queryTokens.isEmpty) {
-      return score;
+    var score = 0.0;
+
+    /*
+     * Sehr starke Treffer:
+     *
+     * "wuppertal" == kompletter Stationsname
+     * "wuppertal hbf" beginnt mit der Suche
+     */
+    if (name == query) {
+      score += 5000;
+    }
+
+    if (name.startsWith(query)) {
+      score += 2500;
+    }
+
+    if (name.contains(query)) {
+      score += 1200;
     }
 
     var matchedTokens = 0;
@@ -335,23 +333,17 @@ class StationDatabase {
       for (final nameToken in nameTokens) {
         if (nameToken == queryToken) {
           bestTokenScore =
-              _max(bestTokenScore, 180);
+              _max(bestTokenScore, 1000);
         } else if (nameToken.startsWith(
           queryToken,
         )) {
           bestTokenScore =
-              _max(bestTokenScore, 140);
+              _max(bestTokenScore, 600);
         } else if (nameToken.contains(
           queryToken,
         )) {
           bestTokenScore =
-              _max(bestTokenScore, 100);
-        } else if (_isCloseEnough(
-          queryToken,
-          nameToken,
-        )) {
-          bestTokenScore =
-              _max(bestTokenScore, 55);
+              _max(bestTokenScore, 300);
         }
       }
 
@@ -361,36 +353,57 @@ class StationDatabase {
       }
     }
 
-    /*
-     * Alle Suchbestandteile gefunden:
-     * deutlicher Bonus.
-     *
-     * Dadurch wird z. B.
-     *
-     * "Reichenbach im Vogtland"
-     *
-     * gegenüber einem beliebigen
-     * "Reichenbach" besser behandelt.
-     */
-    if (matchedTokens ==
-        queryTokens.length) {
-      score += 300;
-    } else if (matchedTokens > 0) {
-      score +=
-          matchedTokens * 20;
-    } else {
-      /*
-       * Kein vernünftiger Bestandteil gefunden.
-       */
+    if (matchedTokens == 0) {
       return 0;
     }
 
+    if (matchedTokens == queryTokens.length) {
+      score += 1500;
+    } else {
+      score += matchedTokens * 100;
+    }
+
     /*
-     * Bahnhöfe und Stationen werden leicht
-     * bevorzugt.
+     * Ein wichtiger Punkt für die aktuelle Suche:
+     *
+     * Bei "Wuppertal" soll
+     *
+     *   Wuppertal
+     *   Wuppertal Hbf
+     *   Wuppertal Barmen
+     *
+     * vor langen Namen wie
+     *
+     *   Wuppertal Hatzfeld Barmen
+     *
+     * erscheinen.
+     *
+     * Deshalb werden zusätzliche Wörter leicht abgewertet.
+     */
+    final extraTokens =
+        nameTokens.length - queryTokens.length;
+
+    if (extraTokens > 0) {
+      score -= extraTokens * 90;
+    }
+
+    /*
+     * Kürzere Namen werden bei ansonsten gleichem
+     * Treffer bevorzugt.
+     */
+    score -= name.length * 0.5;
+
+    /*
+     * Der vom Python-Indexer berechnete Prioritätswert
+     * berücksichtigt u. a. echte Bahnhöfe.
+     */
+    score += station.priority * 0.5;
+
+    /*
+     * Station (location_type 1) leicht bevorzugen.
      */
     if (station.locationType == 1) {
-      score += 25;
+      score += 200;
     }
 
     return score;
@@ -406,46 +419,35 @@ class StationDatabase {
   }
 
   String _normalize(String value) {
-    var result = value.trim().toLowerCase();
+    var result =
+        value.trim().toLowerCase();
 
-    /*
-     * Deutsche Umlaute vereinheitlichen.
-     */
     result = result
         .replaceAll('ä', 'ae')
         .replaceAll('ö', 'oe')
         .replaceAll('ü', 'ue')
         .replaceAll('ß', 'ss');
 
-    /*
-     * Häufige Bahnhofs-Abkürzungen vereinheitlichen.
-     */
-    result = result
-        .replaceAll(
-          RegExp(r'\bbhf\b'),
-          'bahnhof',
-        )
-        .replaceAll(
-          RegExp(r'\bbf\b'),
-          'bahnhof',
-        )
-        .replaceAll(
-          RegExp(r'\bhbf\b'),
-          'hauptbahnhof',
-        );
-
-    /*
-     * Klammern werden für die Suchnormalisierung
-     * wie normale Trennzeichen behandelt.
-     */
     result = result.replaceAll(
-      RegExp(r'[(),./_-]+'),
+      RegExp(r'\bbhf\b'),
+      'bahnhof',
+    );
+
+    result = result.replaceAll(
+      RegExp(r'\bhbf\b'),
+      'hauptbahnhof',
+    );
+
+    result = result.replaceAll(
+      RegExp(r'\bbf\b'),
+      'bahnhof',
+    );
+
+    result = result.replaceAll(
+      RegExp(r'[\(\),./_-]+'),
       ' ',
     );
 
-    /*
-     * Mehrere Leerzeichen zusammenfassen.
-     */
     result = result.replaceAll(
       RegExp(r'\s+'),
       ' ',
@@ -454,158 +456,12 @@ class StationDatabase {
     return result.trim();
   }
 
-  bool _isCloseEnough(
-    String query,
-    String candidate,
-  ) {
-    /*
-     * Für sehr kurze Wörter keine aggressive
-     * Tippfehlerkorrektur.
-     */
-    if (query.length < 4) {
-      return false;
-    }
-
-    /*
-     * Nur Kandidaten ähnlicher Länge vergleichen.
-     */
-    if ((query.length - candidate.length)
-            .abs() >
-        2) {
-      return false;
-    }
-
-    return _levenshtein(
-          query,
-          candidate,
-        ) <=
-        (query.length >= 7 ? 2 : 1);
-  }
-
-  int _levenshtein(
-    String a,
-    String b,
-  ) {
-    if (a == b) {
-      return 0;
-    }
-
-    if (a.isEmpty) {
-      return b.length;
-    }
-
-    if (b.isEmpty) {
-      return a.length;
-    }
-
-    var previous = List<int>.generate(
-      b.length + 1,
-      (index) => index,
-    );
-
-    for (var i = 0; i < a.length; i++) {
-      final current =
-          List<int>.filled(
-        b.length + 1,
-        0,
-      );
-
-      current[0] = i + 1;
-
-      for (var j = 0; j < b.length; j++) {
-        final insertCost =
-            current[j] + 1;
-
-        final deleteCost =
-            previous[j + 1] + 1;
-
-        final replaceCost =
-            previous[j] +
-                (a[i] == b[j] ? 0 : 1);
-
-        current[j + 1] =
-            _min3(
-          insertCost,
-          deleteCost,
-          replaceCost,
-        );
-      }
-
-      previous = current;
-    }
-
-    return previous[b.length];
-  }
-
-  int _min3(
-    int a,
-    int b,
-    int c,
-  ) {
-    var result = a;
-
-    if (b < result) {
-      result = b;
-    }
-
-    if (c < result) {
-      result = c;
-    }
-
-    return result;
-  }
-
   double _max(
     double a,
     double b,
   ) {
     return a > b ? a : b;
   }
-
-  List<String> _parseCsvLine(
-    String line,
-  ) {
-    final result = <String>[];
-    final buffer = StringBuffer();
-
-    var quoted = false;
-
-    for (var i = 0;
-        i < line.length;
-        i++) {
-      final char = line[i];
-
-      if (char == '"') {
-        if (quoted &&
-            i + 1 < line.length &&
-            line[i + 1] == '"') {
-          buffer.write('"');
-          i++;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (char == ',' && !quoted) {
-        result.add(buffer.toString());
-        buffer.clear();
-      } else {
-        buffer.write(char);
-      }
-    }
-
-    result.add(buffer.toString());
-
-    return result;
-  }
-}
-
-class _ScoredStation {
-  final Station station;
-  final double score;
-
-  const _ScoredStation({
-    required this.station,
-    required this.score,
-  });
 }
 
 class HomePage extends StatefulWidget {
@@ -647,6 +503,9 @@ class _HomePageState
   bool _loadingStations = true;
   String? _stationError;
 
+  int _fromSearchNumber = 0;
+  int _toSearchNumber = 0;
+
   @override
   void initState() {
     super.initState();
@@ -684,41 +543,105 @@ class _HomePageState
     }
   }
 
-  void _onFromChanged(
+  Future<void> _onFromChanged(
     String value,
-  ) {
-    final suggestions =
-        _stationDatabase.search(
-      value,
-      limit: 20,
-    );
+  ) async {
+    final searchNumber =
+        ++_fromSearchNumber;
 
     setState(() {
       _selectedFromStation = null;
-      _fromSuggestions =
-          suggestions;
+      _fromSuggestions = [];
     });
+
+    if (value.trim().length < 2) {
+      return;
+    }
+
+    try {
+      final suggestions =
+          await _stationDatabase.search(
+        value,
+        limit: 8,
+      );
+
+      if (!mounted ||
+          searchNumber !=
+              _fromSearchNumber) {
+        return;
+      }
+
+      setState(() {
+        _fromSuggestions =
+            suggestions;
+      });
+    } catch (error) {
+      if (!mounted ||
+          searchNumber !=
+              _fromSearchNumber) {
+        return;
+      }
+
+      setState(() {
+        _fromSuggestions = [];
+        _stationError =
+            error.toString();
+      });
+    }
   }
 
-  void _onToChanged(
+  Future<void> _onToChanged(
     String value,
-  ) {
-    final suggestions =
-        _stationDatabase.search(
-      value,
-      limit: 20,
-    );
+  ) async {
+    final searchNumber =
+        ++_toSearchNumber;
 
     setState(() {
       _selectedToStation = null;
-      _toSuggestions =
-          suggestions;
+      _toSuggestions = [];
     });
+
+    if (value.trim().length < 2) {
+      return;
+    }
+
+    try {
+      final suggestions =
+          await _stationDatabase.search(
+        value,
+        limit: 8,
+      );
+
+      if (!mounted ||
+          searchNumber !=
+              _toSearchNumber) {
+        return;
+      }
+
+      setState(() {
+        _toSuggestions =
+            suggestions;
+      });
+    } catch (error) {
+      if (!mounted ||
+          searchNumber !=
+              _toSearchNumber) {
+        return;
+      }
+
+      setState(() {
+        _toSuggestions = [];
+        _stationError =
+            error.toString();
+      });
+    }
   }
 
   void _selectFromStation(
     Station station,
   ) {
+    _fromSearchNumber++;
+
     setState(() {
       _selectedFromStation =
           station;
@@ -739,6 +662,8 @@ class _HomePageState
   void _selectToStation(
     Station station,
   ) {
+    _toSearchNumber++;
+
     setState(() {
       _selectedToStation =
           station;
@@ -934,8 +859,7 @@ class _HomePageState
           ),
           NavigationDestination(
             icon: Icon(
-              Icons
-                  .warning_amber_outlined,
+              Icons.warning_amber_outlined,
             ),
             label: 'Störungen',
           ),
@@ -951,8 +875,7 @@ class _HomePageState
             const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment:
-              CrossAxisAlignment
-                  .stretch,
+              CrossAxisAlignment.stretch,
           children: [
             if (_loadingStations)
               const Card(
@@ -974,7 +897,7 @@ class _HomePageState
                       ),
                       Expanded(
                         child: Text(
-                          'Haltestellen werden geladen …',
+                          'Haltestellen werden vorbereitet …',
                         ),
                       ),
                     ],
@@ -1002,13 +925,11 @@ class _HomePageState
                     const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment:
-                      CrossAxisAlignment
-                          .stretch,
+                      CrossAxisAlignment.stretch,
                   children: [
                     const Text(
                       'Reise planen',
-                      style:
-                          TextStyle(
+                      style: TextStyle(
                         fontSize: 22,
                         fontWeight:
                             FontWeight.bold,
@@ -1021,9 +942,8 @@ class _HomePageState
                       'Verbindungen mit dem '
                       'Deutschlandticket finden',
                       style: TextStyle(
-                        color: Colors
-                            .grey
-                            .shade700,
+                        color:
+                            Colors.grey.shade700,
                       ),
                     ),
                     const SizedBox(
@@ -1034,9 +954,9 @@ class _HomePageState
                           _fromController,
                       label: 'Start',
                       hint:
-                          'z. B. Reichen…',
-                      icon: Icons
-                          .trip_origin,
+                          'z. B. Wuppertal',
+                      icon:
+                          Icons.trip_origin,
                       suggestions:
                           _fromSuggestions,
                       onChanged:
@@ -1057,10 +977,8 @@ class _HomePageState
                               'Start und Ziel tauschen',
                           onPressed:
                               _swapLocations,
-                          icon:
-                              const Icon(
-                            Icons
-                                .swap_vert,
+                          icon: const Icon(
+                            Icons.swap_vert,
                           ),
                         ),
                         const Expanded(
@@ -1076,9 +994,9 @@ class _HomePageState
                           _toController,
                       label: 'Ziel',
                       hint:
-                          'z. B. Berlin Hbf',
-                      icon: Icons
-                          .location_on_outlined,
+                          'z. B. Reichenbach Vogtland',
+                      icon:
+                          Icons.location_on_outlined,
                       suggestions:
                           _toSuggestions,
                       onChanged:
@@ -1104,13 +1022,10 @@ class _HomePageState
                           EdgeInsets.zero,
                       leading:
                           const Icon(
-                        Icons
-                            .calendar_today,
+                        Icons.calendar_today,
                       ),
                       title:
-                          const Text(
-                        'Datum',
-                      ),
+                          const Text('Datum'),
                       subtitle:
                           Text(
                         _formatDate(
@@ -1119,8 +1034,7 @@ class _HomePageState
                       ),
                       trailing:
                           const Icon(
-                        Icons
-                            .chevron_right,
+                        Icons.chevron_right,
                       ),
                       onTap:
                           _selectDate,
@@ -1131,13 +1045,10 @@ class _HomePageState
                           EdgeInsets.zero,
                       leading:
                           const Icon(
-                        Icons
-                            .access_time,
+                        Icons.access_time,
                       ),
                       title:
-                          const Text(
-                        'Abfahrt',
-                      ),
+                          const Text('Abfahrt'),
                       subtitle:
                           Text(
                         _formatTime(
@@ -1146,8 +1057,7 @@ class _HomePageState
                       ),
                       trailing:
                           const Icon(
-                        Icons
-                            .chevron_right,
+                        Icons.chevron_right,
                       ),
                       onTap:
                           _selectTime,
@@ -1172,8 +1082,7 @@ class _HomePageState
                 label:
                     const Text(
                   'VERBINDUNG SUCHEN',
-                  style:
-                      TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight:
                         FontWeight.bold,
@@ -1186,9 +1095,9 @@ class _HomePageState
             ),
             OutlinedButton.icon(
               onPressed: () {
-                ScaffoldMessenger
-                    .of(context)
-                    .showSnackBar(
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(
                   const SnackBar(
                     content: Text(
                       'Standortfunktion folgt.',
@@ -1217,21 +1126,24 @@ class _HomePageState
     required IconData icon,
     required List<Station>
         suggestions,
-    required ValueChanged<String>
-        onChanged,
+    required Future<void> Function(
+      String,
+    ) onChanged,
     required ValueChanged<Station>
         onSelected,
   }) {
     return Column(
       crossAxisAlignment:
-          CrossAxisAlignment
-              .stretch,
+          CrossAxisAlignment.stretch,
       children: [
         TextField(
           controller:
               controller,
           onChanged:
-              onChanged,
+              (value) {
+            onChanged(value);
+            setState(() {});
+          },
           decoration:
               InputDecoration(
             labelText: label,
@@ -1239,18 +1151,16 @@ class _HomePageState
             prefixIcon:
                 Icon(icon),
             suffixIcon:
-                controller.text
-                        .isNotEmpty
+                controller.text.isNotEmpty
                     ? IconButton(
                         tooltip:
                             'Löschen',
-                        onPressed:
-                            () {
-                          controller
-                              .clear();
-                          onChanged(
-                            '',
-                          );
+                        onPressed: () {
+                          controller.clear();
+
+                          onChanged('');
+
+                          setState(() {});
                         },
                         icon:
                             const Icon(
@@ -1261,85 +1171,69 @@ class _HomePageState
             border:
                 OutlineInputBorder(
               borderRadius:
-                  BorderRadius
-                      .circular(
+                  BorderRadius.circular(
                 12,
               ),
             ),
           ),
         ),
-        if (suggestions
-            .isNotEmpty)
+        if (suggestions.isNotEmpty)
           Container(
             margin:
-                const EdgeInsets
-                    .only(
+                const EdgeInsets.only(
               top: 4,
             ),
             constraints:
                 const BoxConstraints(
-              maxHeight: 360,
+              maxHeight: 320,
             ),
             decoration:
                 BoxDecoration(
+              color:
+                  Theme.of(context)
+                      .colorScheme
+                      .surface,
               border:
                   Border.all(
-                color: Colors
-                    .grey
-                    .shade300,
+                color:
+                    Colors.grey.shade300,
               ),
               borderRadius:
-                  BorderRadius
-                      .circular(
+                  BorderRadius.circular(
                 12,
               ),
             ),
             child:
                 ListView.separated(
-              shrinkWrap:
-                  true,
+              shrinkWrap: true,
               itemCount:
-                  suggestions
-                      .length,
+                  suggestions.length,
               separatorBuilder:
-                  (
-                context,
-                index,
-              ) =>
+                  (context, index) =>
                       const Divider(
                 height: 1,
               ),
               itemBuilder:
-                  (
-                context,
-                index,
-              ) {
+                  (context, index) {
                 final station =
-                    suggestions[
-                        index];
+                    suggestions[index];
 
                 return ListTile(
                   dense: true,
-                  leading:
-                      Icon(
-                    station.locationType ==
-                            1
-                        ? Icons
-                            .train
+                  leading: Icon(
+                    station.locationType == 1
+                        ? Icons.train
                         : Icons
                             .directions_bus_outlined,
                   ),
-                  title:
-                      Text(
+                  title: Text(
                     station.name,
                     maxLines: 2,
                     overflow:
-                        TextOverflow
-                            .ellipsis,
+                        TextOverflow.ellipsis,
                   ),
                   subtitle:
-                      station.locationType ==
-                              1
+                      station.locationType == 1
                           ? const Text(
                               'Bahnhof / Station',
                             )
@@ -1348,6 +1242,8 @@ class _HomePageState
                     onSelected(
                       station,
                     );
+
+                    setState(() {});
                   },
                 );
               },
@@ -1361,8 +1257,7 @@ class _HomePageState
     return const Center(
       child: Column(
         mainAxisAlignment:
-            MainAxisAlignment
-                .center,
+            MainAxisAlignment.center,
         children: [
           Icon(
             Icons.map_outlined,
@@ -1394,12 +1289,10 @@ class _HomePageState
     return const Center(
       child: Column(
         mainAxisAlignment:
-            MainAxisAlignment
-                .center,
+            MainAxisAlignment.center,
         children: [
           Icon(
-            Icons
-                .warning_amber_outlined,
+            Icons.warning_amber_outlined,
             size: 72,
           ),
           SizedBox(
@@ -1479,9 +1372,7 @@ class SearchResultPage
     return Scaffold(
       appBar: AppBar(
         title:
-            const Text(
-          'Verbindung',
-        ),
+            const Text('Verbindung'),
       ),
       body: ListView(
         padding:
@@ -1493,8 +1384,7 @@ class SearchResultPage
                   const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment:
-                    CrossAxisAlignment
-                        .start,
+                    CrossAxisAlignment.start,
                 children: [
                   Text(
                     '$from → $to',
@@ -1528,8 +1418,7 @@ class SearchResultPage
                   ),
                   const Text(
                     'Noch keine Verbindung berechnet.',
-                    style:
-                        TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight:
                           FontWeight.bold,
@@ -1543,15 +1432,12 @@ class SearchResultPage
                     'Haltestellen werden '
                     'bereits mit ihrer '
                     'GTFS-ID übernommen.',
-                    style:
-                        TextStyle(
-                      color: Colors
-                          .grey
-                          .shade700,
+                    style: TextStyle(
+                      color:
+                          Colors.grey.shade700,
                     ),
                   ),
-                  if (fromStation !=
-                      null) ...[
+                  if (fromStation != null) ...[
                     const SizedBox(
                       height: 16,
                     ),
@@ -1563,11 +1449,9 @@ class SearchResultPage
                         fontSize: 12,
                       ),
                     ),
-                    if (fromStation!
-                            .latitude !=
-                        null &&
-                        fromStation!
-                                .longitude !=
+                    if (fromStation!.latitude !=
+                            null &&
+                        fromStation!.longitude !=
                             null)
                       Text(
                         'Koordinaten: '
@@ -1579,8 +1463,7 @@ class SearchResultPage
                         ),
                       ),
                   ],
-                  if (toStation !=
-                      null) ...[
+                  if (toStation != null) ...[
                     const SizedBox(
                       height: 8,
                     ),
@@ -1592,11 +1475,9 @@ class SearchResultPage
                         fontSize: 12,
                       ),
                     ),
-                    if (toStation!
-                            .latitude !=
-                        null &&
-                        toStation!
-                                .longitude !=
+                    if (toStation!.latitude !=
+                            null &&
+                        toStation!.longitude !=
                             null)
                       Text(
                         'Koordinaten: '
