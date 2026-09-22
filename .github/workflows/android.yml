@@ -46,7 +46,6 @@ jobs:
           echo "Preparing GTFS data"
           echo "========================================"
 
-          mkdir -p assets/data
           mkdir -p /tmp/gtfs
 
           echo "Downloading current Germany GTFS feed..."
@@ -61,35 +60,46 @@ jobs:
 
           echo "Download finished."
 
-          echo "Checking ZIP file..."
-
           test -s /tmp/gtfs/latest.zip
+
+          echo "Checking ZIP file..."
 
           unzip -t /tmp/gtfs/latest.zip > /dev/null
 
-          echo "ZIP file is valid."
+          echo "GTFS ZIP is valid."
 
-          echo "Extracting stops.txt..."
+          ls -lh /tmp/gtfs/latest.zip
 
-          unzip -j -o \
+      - name: Build station search index
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "Building station search index"
+          echo "========================================"
+
+          rm -rf assets/data/stations
+          mkdir -p assets/data/stations
+
+          python3 tool/build_stops_index.py \
             /tmp/gtfs/latest.zip \
-            'stops.txt' \
-            -d assets/data
+            assets/data/stations
 
-          echo "Checking generated asset..."
+          echo ""
+          echo "Generated station index files:"
+          find assets/data/stations -maxdepth 1 -type f | sort
 
-          test -s assets/data/stops.txt
+          echo ""
+          echo "Number of index files:"
+          find assets/data/stations -maxdepth 1 -type f | wc -l
 
-          echo "GTFS asset successfully created."
+          echo ""
+          echo "Checking important buckets..."
 
-          echo "File size:"
-          ls -lh assets/data/stops.txt
+          test -s assets/data/stations/r.json
+          test -s assets/data/stations/w.json
 
-          echo "Number of lines:"
-          wc -l assets/data/stops.txt
-
-          echo "First lines:"
-          head -n 5 assets/data/stops.txt
+          echo "Station index successfully created."
 
       - name: Verify Flutter asset configuration
         run: |
@@ -97,11 +107,12 @@ jobs:
 
           echo "Checking pubspec.yaml..."
 
-          grep -n "assets/data/stops.txt" pubspec.yaml
+          grep -n "assets/data/stations/" pubspec.yaml
 
-          echo "Checking asset file..."
+          echo "Checking station index..."
 
-          test -s assets/data/stops.txt
+          test -s assets/data/stations/r.json
+          test -s assets/data/stations/w.json
 
           echo "Asset configuration OK."
 
