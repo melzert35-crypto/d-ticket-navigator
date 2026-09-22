@@ -82,9 +82,17 @@ def normalize(text):
         if not unicodedata.combining(char)
     )
 
-    text = re.sub(r"[\(\)\[\]\{\},.;:/_\\\-]+", " ", text)
+    text = re.sub(
+        r"[\(\)\[\]\{\},.;:/_\\\-]+",
+        " ",
+        text,
+    )
 
-    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(
+        r"\s+",
+        " ",
+        text,
+    ).strip()
 
     return text
 
@@ -129,44 +137,108 @@ def normalized_tokens(text):
     return result
 
 
-def make_search_text(name):
-    base = normalize(name)
+def make_search_text(name, location):
+    variants = set()
 
-    variants = {base}
+    base_name = normalize(name)
+    base_location = normalize(location)
 
-    if "vogtl" in base:
-        variants.add(base.replace("vogtl", "vogtland"))
+    if base_name:
+        variants.add(base_name)
 
-    if "vogt " in base:
-        variants.add(base.replace("vogt ", "vogtland "))
+    if base_location:
+        variants.add(base_location)
 
-    if "bahnhof" in base:
-        variants.add(base.replace("bahnhof", "bf"))
+    combined = " ".join(
+        part
+        for part in (
+            base_name,
+            base_location,
+        )
+        if part
+    )
 
-    if re.search(r"\bbf\b", base):
-        variants.add(re.sub(r"\bbf\b", "bahnhof", base))
+    if combined:
+        variants.add(combined)
 
-    if re.search(r"\bhbf\b", base):
-        variants.add(re.sub(r"\bhbf\b", "bahnhof", base))
+    expanded = set()
 
-    if re.search(r"\bbhf\b", base):
-        variants.add(re.sub(r"\bbhf\b", "bahnhof", base))
+    for value in variants:
+        expanded.add(value)
 
-    return " | ".join(sorted(variants))
+        if "vogtl" in value:
+            expanded.add(
+                value.replace(
+                    "vogtl",
+                    "vogtland",
+                )
+            )
+
+        if "vogt " in value:
+            expanded.add(
+                value.replace(
+                    "vogt ",
+                    "vogtland ",
+                )
+            )
+
+        if "bahnhof" in value:
+            expanded.add(
+                value.replace(
+                    "bahnhof",
+                    "bf",
+                )
+            )
+
+        if re.search(r"\bbf\b", value):
+            expanded.add(
+                re.sub(
+                    r"\bbf\b",
+                    "bahnhof",
+                    value,
+                )
+            )
+
+        if re.search(r"\bhbf\b", value):
+            expanded.add(
+                re.sub(
+                    r"\bhbf\b",
+                    "bahnhof",
+                    value,
+                )
+            )
+
+        if re.search(r"\bbhf\b", value):
+            expanded.add(
+                re.sub(
+                    r"\bbhf\b",
+                    "bahnhof",
+                    value,
+                )
+            )
+
+    return " | ".join(
+        sorted(expanded)
+    )
 
 
-def calculate_priority(name, location_type):
+def calculate_priority(
+    name,
+    location_type,
+):
     normalized = normalize(name)
-    tokens = set(normalized.split())
+    tokens = set(
+        normalized.split()
+    )
 
     priority = 0
 
-    # GTFS location_type 1 = Station.
     if location_type == 1:
         priority += 1000
 
-    # Railway-related names should appear before ordinary stops.
-    if tokens.intersection(RAIL_WORDS):
+    if tokens.intersection(
+        RAIL_WORDS
+    ):
         priority += 500
 
     if "hauptbahnhof" in tokens:
@@ -184,15 +256,22 @@ def calculate_priority(name, location_type):
     if "station" in tokens:
         priority += 100
 
-    # Clearly non-station places should be lower in the results.
-    if tokens.intersection(IRRELEVANT_WORDS):
+    if tokens.intersection(
+        IRRELEVANT_WORDS
+    ):
         priority -= 250
 
     return priority
 
 
-def bucket_keys(name):
-    tokens = normalized_tokens(name)
+def bucket_keys(
+    name,
+    location="",
+):
+    tokens = (
+        normalized_tokens(name)
+        + normalized_tokens(location)
+    )
 
     keys = set()
 
@@ -214,21 +293,59 @@ def bucket_keys(name):
 def parse_float(value):
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except (
+        TypeError,
+        ValueError,
+    ):
         return None
 
 
 def parse_int(value):
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (
+        TypeError,
+        ValueError,
+    ):
         return 0
+
+
+def clean_location(
+    stop_desc,
+    stop_name,
+):
+    """
+    stop_desc ist die beste Orts-/Zusatzinformation,
+    die wir aus stops.txt ohne externe Geodaten
+    übernehmen können.
+
+    Wir entfernen hier nur offensichtliche
+    Leerzeichen. Die eigentliche Anzeige bleibt
+    ansonsten unverändert, damit keine Ortsangabe
+    erfunden wird.
+    """
+    location = (
+        stop_desc or ""
+    ).strip()
+
+    name = (
+        stop_name or ""
+    ).strip()
+
+    if not location:
+        return ""
+
+    if location == name:
+        return ""
+
+    return location
 
 
 def main():
     if len(sys.argv) != 3:
         print(
-            "Usage: build_stops_index.py <gtfs.zip> <output-directory>",
+            "Usage: build_stops_index.py "
+            "<gtfs.zip> <output-directory>",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -236,7 +353,10 @@ def main():
     zip_path = sys.argv[1]
     output_dir = sys.argv[2]
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(
+        output_dir,
+        exist_ok=True,
+    )
 
     buckets = {
         chr(ord("a") + i): {}
@@ -247,61 +367,123 @@ def main():
 
     total_rows = 0
     accepted_rows = 0
+    location_rows = 0
 
     print("Opening GTFS ZIP...")
 
-    with zipfile.ZipFile(zip_path, "r") as archive:
+    with zipfile.ZipFile(
+        zip_path,
+        "r",
+    ) as archive:
+
         names = archive.namelist()
 
         stop_file = None
 
         for name in names:
-            if name.lower().endswith("stops.txt"):
+            if name.lower().endswith(
+                "stops.txt"
+            ):
                 stop_file = name
                 break
 
         if stop_file is None:
-            raise RuntimeError("stops.txt was not found in GTFS ZIP")
+            raise RuntimeError(
+                "stops.txt was not found "
+                "in GTFS ZIP"
+            )
 
-        print(f"Reading: {stop_file}")
+        print(
+            f"Reading: {stop_file}"
+        )
 
-        with archive.open(stop_file, "r") as raw_file:
+        with archive.open(
+            stop_file,
+            "r",
+        ) as raw_file:
+
             text_file = io.TextIOWrapper(
                 raw_file,
                 encoding="utf-8-sig",
                 newline="",
             )
 
-            reader = csv.DictReader(text_file)
+            reader = csv.DictReader(
+                text_file
+            )
 
             for row in reader:
                 total_rows += 1
 
-                stop_id = (row.get("stop_id") or "").strip()
-                stop_name = (row.get("stop_name") or "").strip()
+                stop_id = (
+                    row.get("stop_id")
+                    or ""
+                ).strip()
 
-                if not stop_id or not stop_name:
+                stop_name = (
+                    row.get("stop_name")
+                    or ""
+                ).strip()
+
+                if (
+                    not stop_id
+                    or not stop_name
+                ):
                     continue
 
                 location_type = parse_int(
-                    row.get("location_type") or "0"
+                    row.get(
+                        "location_type"
+                    )
+                    or "0"
                 )
 
-                # We currently need stations and normal stops.
-                if location_type not in (0, 1):
+                if location_type not in (
+                    0,
+                    1,
+                ):
                     continue
 
-                lat = parse_float(row.get("stop_lat"))
-                lon = parse_float(row.get("stop_lon"))
+                lat = parse_float(
+                    row.get("stop_lat")
+                )
 
-                if lat is None or lon is None:
+                lon = parse_float(
+                    row.get("stop_lon")
+                )
+
+                if (
+                    lat is None
+                    or lon is None
+                ):
                     continue
 
                 parent_station = (
-                    row.get("parent_station") or ""
+                    row.get(
+                        "parent_station"
+                    )
+                    or ""
                 ).strip()
 
-                search_text = make_search_text(stop_name)
+                stop_desc = (
+                    row.get(
+                        "stop_desc"
+                    )
+                    or ""
+                ).strip()
+
+                location = clean_location(
+                    stop_desc,
+                    stop_name,
+                )
+
+                if location:
+                    location_rows += 1
+
+                search_text = make_search_text(
+                    stop_name,
+                    location,
+                )
 
                 priority = calculate_priority(
                     stop_name,
@@ -311,6 +493,7 @@ def main():
                 record = {
                     "id": stop_id,
                     "name": stop_name,
+                    "location": location,
                     "lat": lat,
                     "lon": lon,
                     "parent": parent_station,
@@ -319,31 +502,58 @@ def main():
                     "search": search_text,
                 }
 
-                keys = bucket_keys(stop_name)
+                keys = bucket_keys(
+                    stop_name,
+                    location,
+                )
 
                 for key in keys:
-                    existing = buckets[key].get(stop_id)
+                    existing = buckets[
+                        key
+                    ].get(stop_id)
 
                     if (
                         existing is None
-                        or record["priority"] > existing["priority"]
+                        or record["priority"]
+                        > existing["priority"]
                     ):
-                        buckets[key][stop_id] = record
+                        buckets[
+                            key
+                        ][stop_id] = record
 
                 accepted_rows += 1
 
-    print(f"Total GTFS stop rows: {total_rows}")
-    print(f"Accepted station/stop rows: {accepted_rows}")
+    print(
+        f"Total GTFS stop rows: "
+        f"{total_rows}"
+    )
+
+    print(
+        f"Accepted station/stop rows: "
+        f"{accepted_rows}"
+    )
+
+    print(
+        f"Rows with location description: "
+        f"{location_rows}"
+    )
 
     total_records = 0
 
     for key, records in buckets.items():
-        values = list(records.values())
+        values = list(
+            records.values()
+        )
 
         values.sort(
             key=lambda item: (
                 -item["priority"],
-                normalize(item["name"]),
+                normalize(
+                    item["name"]
+                ),
+                normalize(
+                    item["location"]
+                ),
                 item["id"],
             )
         )
@@ -362,21 +572,33 @@ def main():
                 values,
                 file,
                 ensure_ascii=False,
-                separators=(",", ":"),
+                separators=(
+                    ",",
+                    ":",
+                ),
             )
 
-        total_records += len(values)
+        total_records += len(
+            values
+        )
 
         print(
-            f"{key}.json: {len(values):,} records"
+            f"{key}.json: "
+            f"{len(values):,} records"
         )
 
     print("")
+
     print(
-        f"Total indexed records (including bucket duplicates): "
+        "Total indexed records "
+        "(including bucket duplicates): "
         f"{total_records:,}"
     )
-    print("Station search index successfully created.")
+
+    print(
+        "Station search index "
+        "successfully created."
+    )
 
 
 if __name__ == "__main__":
