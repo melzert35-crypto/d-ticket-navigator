@@ -101,6 +101,15 @@ jobs:
 
           echo "Station index successfully created."
 
+      - name: Build stop name lookup
+        run: |
+          set -e
+          python3 tool/build_stop_names.py \
+            /tmp/gtfs/latest.zip \
+            assets/data/routing/patterns.json \
+            assets/data/routing/stop_names.json
+          test -s assets/data/routing/stop_names.json
+
       - name: Verify Flutter asset configuration
         run: |
           set -e
